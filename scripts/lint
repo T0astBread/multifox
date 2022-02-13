@@ -1,0 +1,21 @@
+#!/bin/sh
+
+success=true
+
+echo
+echo "=== black ==="
+black --check . || success=false
+
+echo
+echo "=== bandit ==="
+bandit -c bandit.yml . || success=false
+
+echo
+echo "=== mypy ==="
+mypy . || success=false
+
+echo
+echo "=== pylint ==="
+find . -name "*.py" -exec pylint {} \; || success=false
+
+$success

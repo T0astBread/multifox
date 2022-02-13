@@ -1,0 +1,2 @@
+# Source me!
+eval (_MULTIFOX_COMPLETE=fish_source multifox)
