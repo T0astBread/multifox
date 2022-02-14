@@ -27,7 +27,7 @@ def test_init_profile_firefox():
             ],
         )
         assert result.exit_code == 0
-        assert os.path.isfile(os.path.join("firefox-simple-1", "profile.json"))
+        assert os.path.isfile(os.path.join("firefox-simple-1", "profile-config.json"))
         firefox_dir = os.path.join("firefox-simple-1", ".mozilla", "firefox")
         assert os.path.isfile(os.path.join(firefox_dir, "profiles.ini"))
         print(os.listdir(firefox_dir))
@@ -53,7 +53,9 @@ def test_init_profile_tor_browser():
             ],
         )
         assert result.exit_code == 0
-        assert os.path.isfile(os.path.join("tor-browser-simple-1", "profile.json"))
+        assert os.path.isfile(
+            os.path.join("tor-browser-simple-1", "profile-config.json")
+        )
         profile_dir = os.path.join(
             "tor-browser-simple-1",
             ".local",
