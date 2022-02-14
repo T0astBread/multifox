@@ -2,6 +2,7 @@
 # pylint: disable=missing-function-docstring
 # pylint: disable=missing-module-docstring
 
+import filecmp
 import os
 import random
 import string
@@ -28,12 +29,7 @@ def test_init_profile_firefox():
         )
         assert result.exit_code == 0
         assert os.path.isfile(os.path.join("firefox-simple-1", "profile-config.json"))
-        firefox_dir = os.path.join("firefox-simple-1", ".mozilla", "firefox")
-        assert os.path.isfile(os.path.join(firefox_dir, "profiles.ini"))
-        print(os.listdir(firefox_dir))
-        profile_dirs = [p for p in os.listdir(firefox_dir) if p.endswith(".default")]
-        assert len(profile_dirs) == 1
-        profile_dir = os.path.join(firefox_dir, profile_dirs[0])
+        profile_dir = get_firefox_profile_dir("firefox-simple-1")
         assert os.path.isfile(os.path.join(profile_dir, "extensions.json"))
         assert os.path.isfile(os.path.join(profile_dir, "extension-preferences.json"))
         assert os.path.isfile(os.path.join(profile_dir, "prefs.js"))
@@ -108,6 +104,51 @@ def test_launch_browser_firefox():
             result = browser.result()
             assert result.exit_code == 0
             assert os.path.isfile("screenshot.png")
+
+
+def test_userjs_firefox():
+    runner = CliRunner()
+    working_dir = os.getcwd()
+    with runner.isolated_filesystem():
+        config_dir = os.path.join(working_dir, "testdata", "firefox-with-userjs")
+        result = runner.invoke(
+            multifox,
+            [
+                "init-profile",
+                config_dir,
+                "firefox-userjs-1",
+            ],
+        )
+        assert result.exit_code == 0
+        profile_dir = get_firefox_profile_dir("firefox-userjs-1")
+        user_js = os.path.join(profile_dir, "user.js")
+        assert os.path.isfile(user_js)
+        assert filecmp.cmp(os.path.join(config_dir, "user.js"), user_js)
+
+        config_dir = os.path.join(
+            working_dir, "testdata", "firefox-with-different-userjs"
+        )
+        result = runner.invoke(
+            multifox,
+            [
+                "apply-profile-config",
+                config_dir,
+                "firefox-userjs-1",
+            ],
+        )
+        assert result.exit_code == 0
+        assert os.path.isfile(user_js)
+        assert filecmp.cmp(os.path.join(config_dir, "user.js"), user_js)
+
+
+def get_firefox_profile_dir(profile_home_path):
+    firefox_dir = os.path.join(profile_home_path, ".mozilla", "firefox")
+    assert os.path.isfile(os.path.join(firefox_dir, "profiles.ini"))
+    profile_dirs = [p for p in os.listdir(firefox_dir) if p.endswith(".default")]
+    assert len(profile_dirs) == 1
+    profile_dir = os.path.join(firefox_dir, profile_dirs[0])
+    assert os.path.isdir(profile_dir)
+    return profile_dir
 
 
 def listen_for_http_connection(executor: futures.Executor, url_token: str):

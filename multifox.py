@@ -10,6 +10,7 @@ This module contains all bundled commands.
 
 import json
 import os
+import shutil
 import subprocess  # nosec  # It's okay to launch processes.
 from enum import Enum
 
@@ -67,6 +68,39 @@ class ProfileConfig:
         }
 
 
+def find_profile_dir(config: ProfileConfig, profile_path: str) -> str:
+    """
+    find_profile_dir returns a path to the actual browser profile
+    given the profile's config and profile home directory.
+    """
+    if config.type == ProfileType.FIREFOX:
+        firefox_dir = os.path.join(profile_path, ".mozilla", "firefox")
+        profile_dirs = [p for p in os.listdir(firefox_dir) if p.endswith(".default")]
+        if len(profile_dirs) != 1:
+            raise BrokenProfileException(
+                "Firefox profiles in profile home directory != 1 but a profile home directory should only ever contain one browser profile"  # pylint: disable=line-too-long  # This is a string, what am I supposed to do about it?
+            )
+        profile_dir = os.path.join(firefox_dir, profile_dirs[0])
+        return profile_dir
+    elif config.type == ProfileType.TOR_BROWSER:
+        profile_dir = os.path.join(
+            profile_path,
+            ".local",
+            "share",
+            "tor-browser",
+            "TorBrowser",
+            "Data",
+            "Browser",
+            "profile.default",
+        )
+        if not os.path.isdir(profile_dir):
+            raise BrokenProfileException(
+                f'Profile home directory does not contain a profile (no directory at "{profile_dir}")'  # pylint: disable=line-too-long  # This is a string, what am I supposed to do about it?
+            )
+        return profile_dir
+    raise BrokenConfigException(f'"type" must be one of ({enum_synopsis(ProfileType)})')
+
+
 class BrokenConfigException(click.ClickException):
     """BrokenConfigException marks a broken profile config."""
 
@@ -118,6 +152,24 @@ def with_profile_home(profile_path, env):
     return new_env
 
 
+def apply_config_to_profile(config: ProfileConfig, config_path, profile_path):
+    """
+    apply_config_to_profile applies a config to an existing
+    profile.
+
+    This function is equivalent to the `apply-profile-config`
+    subcommand but it's intended to be called by other commands. It's
+    generally "cleaner" to call a simple Python function as opposed
+    to a click command.
+    """
+    user_js_in_config = os.path.join(config_path, "user.js")
+    if os.path.isfile(user_js_in_config):
+        user_js_in_profile = os.path.join(
+            find_profile_dir(config, profile_path), "user.js"
+        )
+        shutil.copyfile(user_js_in_config, user_js_in_profile)
+
+
 @click.group(add_help_option=False)
 @click.help_option("--help", "-h", help="Show this message and exit")
 def multifox():
@@ -157,6 +209,8 @@ def init_profile(config_path, profile_path):
         check=True,
     )
 
+    apply_config_to_profile(config, config_path, profile_path)
+
 
 @multifox.command(add_help_option=False)
 @click.help_option("--help", "-h", help="Show this message and exit")
@@ -167,11 +221,9 @@ def init_profile(config_path, profile_path):
     "profile-path",
     type=click.Path(exists=True, file_okay=False, writable=True, resolve_path=True),
 )
-def apply_profile_config(
-    config_path, profile_path
-):  # pylint: disable=unused-argument # Will be implemented.
+def apply_profile_config(config_path, profile_path):
     """Apply a config to a profile"""
-    click.echo("Not implemented yet")
+    apply_config_to_profile(read_profile(profile_path), config_path, profile_path)
 
 
 @multifox.command(add_help_option=False)
