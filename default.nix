@@ -3,6 +3,7 @@ let
   pythonPackages = pkgs: with pkgs; [
     # production dependencies
     click
+    pyyaml
 
     # dev dependencies
     bandit
