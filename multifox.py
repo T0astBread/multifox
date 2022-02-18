@@ -10,7 +10,7 @@ This module contains all bundled commands.
 
 import os
 import shutil
-import subprocess
+import subprocess  # nosec  # It's okay to start processes.
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -221,7 +221,7 @@ def load_config() -> Configuration:
     """load_config loads the global multifox configuration."""
     config_file = os.path.join(get_config_dir(), "config.yml")
     with open(config_file, "r", encoding="utf-8") as f:
-        return configuration_from_yaml(yaml.load(f))
+        return configuration_from_yaml(yaml.safe_load(f))
 
 
 def find_profile_by_name(profiles: List[Profile], name: str) -> Optional[Profile]:
@@ -293,7 +293,8 @@ def create_instance(profile: Profile) -> Instance:
     instance.creation_time = datetime.now()
     write_instance(instance)
     instance_dir = os.path.join(get_instance_base_dir(profile.id), instance.id)
-    subprocess.run(
+    # There are no untrusted user inputs in this subprocess call.
+    subprocess.run(  # nosec
         [
             get_executable(profile.configuration.type),
             "--screenshot",
@@ -328,7 +329,8 @@ def launch_browser(profile_type: ProfileType, instance: Instance, args: List[str
     launch_browser launches the browser program for the given profile
     instance.
     """
-    subprocess.run(
+    # args can be used to pass arbitrary arguments to the browser but it is assumed to be trusted.
+    subprocess.run(  # nosec
         [get_executable(profile_type)] + list(args),
         check=True,
         env=with_instance_home(
@@ -415,7 +417,7 @@ def load_instance(instance_dir: str) -> Instance:
     """
     instance_info_file = os.path.join(instance_dir, "instance.yml")
     with open(instance_info_file, "r", encoding="utf-8") as f:
-        instance_yaml = yaml.load(f, Loader=yaml.CLoader)
+        instance_yaml = yaml.safe_load(f)
         return instance_from_yaml(instance_yaml)
 
 

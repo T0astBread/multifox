@@ -8,7 +8,7 @@ black --check . || success=false
 
 echo
 echo "=== bandit ==="
-bandit -c bandit.yml . || success=false
+bandit -c bandit.yml -r . || success=false
 
 echo
 echo "=== mypy ==="
