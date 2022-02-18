@@ -16,9 +16,6 @@ in
 mkShell {
   buildInputs = [
     pythonWithPackages
-
-    firefox
-    torbrowser
   ];
   packages = pythonPackages python39Packages;
   shellHook = ''
