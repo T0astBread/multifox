@@ -295,11 +295,11 @@ def create_instance(profile: Profile) -> Instance:
     instance_dir = os.path.join(get_instance_base_dir(profile.id), instance.id)
     # There are no untrusted user inputs in this subprocess call.
     subprocess.run(  # nosec
-        [
-            get_executable(profile.configuration.type),
-            "--screenshot",
-            "/dev/null",
-            "about:blank",
+        get_bubblewrap_cmd_line(profile.configuration.type, instance_dir)
+        + [
+            b"--screenshot",
+            b"/dev/null",
+            b"about:blank",
         ],
         check=True,
         env=with_instance_home(instance_dir, os.environ),
@@ -324,14 +324,15 @@ def apply_config_to_instance(config: ProfileConfiguration, instance: Instance):
         shutil.copyfile(src_userjs, dst_userjs)
 
 
-def launch_browser(profile_type: ProfileType, instance: Instance, args: List[str]):
+def launch_browser(profile_type: ProfileType, instance: Instance, args: List[bytes]):
     """
     launch_browser launches the browser program for the given profile
     instance.
     """
+    instance_dir = os.path.join(get_instance_base_dir(instance.profile_id), instance.id)
     # args can be used to pass arbitrary arguments to the browser but it is assumed to be trusted.
     subprocess.run(  # nosec
-        [get_executable(profile_type)] + list(args),
+        get_bubblewrap_cmd_line(profile_type, instance_dir) + list(args),
         check=True,
         env=with_instance_home(
             os.path.join(get_instance_base_dir(instance.profile_id), instance.id),
@@ -373,6 +374,99 @@ def find_browser_profile_dir(profile_type: ProfileType, instance_dir: str) -> st
             )
         return profile_dir
     raise ValueError(f'"type" must be one of ({enum_synopsis(ProfileType)})')
+
+
+def get_bubblewrap_cmd_line(
+    profile_type: ProfileType, instance_dir: str
+) -> List[bytes]:
+    """
+    get_bubblewrap_cmd_line returns the full command line to use for
+    running the instance's browser in a sandbox on the instance.
+
+    Additional arguments can be appended at the end.
+    """
+    executable = os.path.realpath(
+        # There is no untrusted input in this subprocess invocation.
+        subprocess.check_output(  # nosec
+            ["which", get_executable(profile_type)]
+        ).rstrip(b"\n")
+    )
+
+    extra_store_paths = set()
+    for path in ["/etc/fonts", "/etc/ssl", "/etc/static/ssl"]:
+        for dirpath, dirnames, filenames in os.walk(path):
+            for dirname in dirnames + filenames:
+                realpath = os.path.realpath(os.path.join(dirpath, dirname))
+                if realpath.startswith("/nix/store/"):
+                    extra_store_paths.add(realpath.encode("utf-8"))
+
+    store_paths = (
+        # It is assumed that the location of the browser executable
+        # does not constitute harmful input for this subprocess call.
+        subprocess.check_output(  # nosec
+            [b"nix-store", b"--query", b"--requisites", executable]
+            + list(extra_store_paths)
+        )
+        .rstrip(b"\n")
+        .splitlines()
+    )
+
+    cmd_line = [b"bwrap"]
+    for store_path in store_paths:
+        cmd_line.append(b"--ro-bind")
+        cmd_line.append(store_path)
+        cmd_line.append(store_path)
+
+    # NOTE: We can't bind D-Bus since Firefox "merges" profiles with
+    # D-Bus enabled.
+
+    pulseaudio_socket_path = f'{os.environ["XDG_RUNTIME_DIR"]}/pulse'
+
+    # While X is not great security-wise, this is not an insecure
+    # usage of a temporary file/directory like Bandit claims.
+    x_socket_path = "/tmp/.X11-unix/"  # nosec
+
+    for arg in [
+        "--unshare-all",
+        "--share-net",
+        "--setenv",
+        "HOME",
+        "/home/user",
+        "--setenv",
+        "USER",
+        "user",
+        "--ro-bind",
+        "/etc/fonts",
+        "/etc/fonts",
+        "--ro-bind",
+        "/etc/ssl",
+        "/etc/ssl",
+        "--ro-bind",
+        "/etc/static/ssl",
+        "/etc/static/ssl",
+        "--bind",
+        instance_dir,
+        "/home/user",
+        "--setenv",
+        "DISPLAY",
+        os.environ["DISPLAY"],
+        "--bind",
+        x_socket_path,
+        x_socket_path,
+        "--bind",
+        pulseaudio_socket_path,
+        pulseaudio_socket_path,
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--",
+    ]:
+        cmd_line.append(arg.encode(encoding="utf-8"))
+
+    cmd_line.append(executable)
+
+    return cmd_line
 
 
 def get_executable(profile_type: ProfileType) -> str:
