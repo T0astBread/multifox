@@ -17,6 +17,8 @@ in
 mkShell {
   buildInputs = [
     pythonWithPackages
+
+    gnome.zenity
   ];
   packages = pythonPackages python39Packages;
   shellHook = ''

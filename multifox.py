@@ -8,9 +8,11 @@ and the Tor Browser.
 This module contains all bundled commands.
 """
 
+import json
 import os
 import shutil
 import subprocess  # nosec  # It's okay to start processes.
+import time
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -33,6 +35,7 @@ class ProfileConfiguration:
     browser profile.
     """
 
+    extensions: Optional[List[str]]
     type: ProfileType
     userjs: Optional[str]
 
@@ -45,6 +48,11 @@ def profile_configuration_from_yaml(
     object from a parsed YAML file.
     """
     profile_config = ProfileConfiguration()
+    profile_config.extensions = (
+        profile_config_yaml["extensions"]
+        if "extensions" in profile_config_yaml
+        else None
+    )
     profile_config.type = ProfileType(profile_config_yaml["type"])
     profile_config.userjs = (
         profile_config_yaml["userjs"] if "userjs" in profile_config_yaml else None
@@ -111,6 +119,7 @@ class Instance:
 
     creation_time: datetime = datetime.now()
     id: str = ""
+    installed_extensions: List[str] = list()
     profile_id: str = ""
     usage_pid: Optional[int] = None
 
@@ -123,6 +132,7 @@ class Instance:
         return {
             "creation_time": self.creation_time,
             "id": self.id,
+            "installed_extensions": self.installed_extensions,
             "profile_id": self.profile_id,
             "usage_pid": self.usage_pid,
         }
@@ -138,6 +148,7 @@ def instance_from_yaml(
     instance = Instance()
     instance.creation_time = instance_yaml["creation_time"]
     instance.id = instance_yaml["id"]
+    instance.installed_extensions = instance_yaml["installed_extensions"]
     instance.profile_id = instance_yaml["profile_id"]
     instance.usage_pid = (
         instance_yaml["usage_pid"] if "usage_pid" in instance_yaml else None
@@ -302,7 +313,7 @@ def create_instance(profile: Profile) -> Instance:
             b"about:blank",
         ],
         check=True,
-        env=with_instance_home(instance_dir, os.environ),
+        env=os.environ,
     )
     return instance
 
@@ -312,16 +323,185 @@ def apply_config_to_instance(config: ProfileConfiguration, instance: Instance):
     apply_config_to_instance applies the given profile configuration
     to the given instance.
     """
-    if config.userjs is not None:
+    update_userjs(config, instance)
+    install_extensions(config, instance)
+
+
+def update_userjs(config: ProfileConfiguration, instance: Instance):
+    """
+    update_userjs updates an instance's user.js file from the file
+    specified in the profile configuration.
+    """
+    userjs_in_instance = os.path.join(
+        find_browser_profile_dir(
+            config.type,
+            os.path.join(get_instance_base_dir(instance.profile_id), instance.id),
+        ),
+        "user.js",
+    )
+    if config.userjs is None:
+        if os.path.isfile(userjs_in_instance):
+            os.remove(userjs_in_instance)
+    else:
         src_userjs = os.path.join(get_config_dir(), config.userjs)
-        dst_userjs = os.path.join(
-            find_browser_profile_dir(
-                config.type,
-                os.path.join(get_instance_base_dir(instance.profile_id), instance.id),
-            ),
-            "user.js",
+        shutil.copyfile(src_userjs, userjs_in_instance)
+
+    # Set preference to enable unattended extension installation from extensions folder.
+    if config.extensions is not None and len(config.extensions) > 0:
+        with open(userjs_in_instance, "a", encoding="utf-8") as f:
+            f.write('user_pref("extensions.autoDisableScopes", 14);\n')
+
+
+def install_extensions(config: ProfileConfiguration, instance: Instance):
+    """
+    install_extensions installs and removes extensions in the profile
+    to match the given configuration.
+    """
+    config_path = get_config_dir()
+    instance_dir = os.path.join(
+        get_instance_base_dir(instance.profile_id),
+        instance.id,
+    )
+    browser_profile_dir = find_browser_profile_dir(config.type, instance_dir)
+    extensions_base_path = os.path.join(browser_profile_dir, "extensions")
+
+    # Remove all installed extensions by default.
+    to_remove = set(instance.installed_extensions)
+    to_install = set()
+
+    # Go over wanted extensions, keep the ones we already have and install the missing ones.
+    if config.extensions is not None:
+        for extension_file_path in config.extensions:
+            extension_file_name = os.path.basename(extension_file_path)
+            if extension_file_name in to_remove:
+                # The extension is already installed and does not need to be removed.
+                to_remove.remove(extension_file_name)
+            else:
+                # The extension is not already installed and needs to be installed.
+                to_install.add(extension_file_path)
+
+    # Read extension-preferences.json
+    extension_preferences = None
+    extension_preferences_path = os.path.join(
+        browser_profile_dir, "extension-preferences.json"
+    )
+    with open(extension_preferences_path, "r", encoding="utf-8") as ext_pref_file:
+        extension_preferences = json.load(ext_pref_file)
+
+    # Actually apply the remove list.
+    for extension_file_name in to_remove:
+        extension_id = extension_id_from_file_path(extension_file_name)
+
+        # Delete from extensions dir.
+        extension_in_instance = os.path.join(extensions_base_path, extension_file_name)
+        if os.path.isfile(
+            extension_in_instance
+        ):  # Handle broken instances that can still be saved by ignoring already missing files.
+            os.remove(extension_in_instance)
+
+        # Delete from extension-prefereces file.
+        del extension_preferences[extension_id]
+
+    # Actually apply the install list.
+    for rel_extension_file_path in to_install:
+        extension_file_path = os.path.join(config_path, rel_extension_file_path)
+        extension_file_name = os.path.basename(extension_file_path)
+        extension_id = extension_id_from_file_path(extension_file_name)
+
+        # Copy to extensions dir.
+        extension_in_instance = os.path.join(extensions_base_path, extension_file_name)
+        os.makedirs(extensions_base_path, mode=0o755, exist_ok=True)
+        shutil.copyfile(
+            extension_file_path, extension_in_instance, follow_symlinks=True
         )
-        shutil.copyfile(src_userjs, dst_userjs)
+
+        # Add to extension-preferences file.
+        extension_preferences[extension_id] = {
+            "permissions": ["internal:privateBrowsingAllowed"],
+            "origins": [],
+        }
+
+    # Write out extension-preferences.json.
+    with open(extension_preferences_path, "w", encoding="utf-8") as ext_pref_file:
+        json.dump(extension_preferences, ext_pref_file)
+
+    # Update instance info.
+    instance.installed_extensions = (
+        [os.path.basename(p) for p in config.extensions]
+        if config.extensions is not None
+        else []
+    )
+    write_instance(instance)
+
+    # Start the browser once to finish installation or removal of addons.
+    if len(to_remove) + len(to_install) > 0:
+        # Start zenity to display a progress bar.
+
+        # We trust that the PATH variable has not been manipulated by
+        # a malicious actor here.
+        #
+        # Additionally, no outside input is passed to this process.
+        zenity = subprocess.Popen(  # nosec
+            [
+                "zenity",
+                "--progress",
+                "--no-cancel",
+                "--title",
+                "Installing extensions",
+                "--width",
+                "400",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ,
+        )
+
+        # Start the browser to do some extension installation
+        # activation magic.
+
+        # There is no untrusted input in this subprocess invocation.
+        proc = subprocess.Popen(  # nosec
+            get_bubblewrap_cmd_line(
+                config.type,
+                instance_dir,
+                allow_net=False,
+                extra_bwrap_args=[b"--die-with-parent"],
+            )
+            + [b"--headless"],
+        )
+
+        # HACK: Wait for ten seconds so that the browser can finish
+        # initializing our new extensions.
+        #
+        # I'm not sure what the browser is actually doing here but
+        # shorter timeouts (tried with five seconds) don't work.
+        #
+        # It would be nice to have a more stable installation method,
+        # maybe via Selenium? (Apparently Selenium can install
+        # extensions.)
+        for i in range(1, 101):
+            time.sleep(0.1)
+            # Update the zenity progress bar.
+            zenity_stdin = zenity.stdin
+            if zenity_stdin is not None:
+                zenity_stdin.write(f"{i}\n".encode("utf-8"))
+                zenity_stdin.flush()
+
+        # Stop and wait for the browser and zenity.
+        zenity.terminate()
+        proc.terminate()
+        proc.wait()
+
+
+def extension_id_from_file_path(extension_file_path: str) -> str:
+    """
+    extension_id_from_file_path returns the ID of an extension at the
+    given file path.
+
+    The extension file must be named "<extension-id>.xpi".
+    """
+    return os.path.basename(extension_file_path).rstrip(".xpi")
 
 
 def launch_browser(profile_type: ProfileType, instance: Instance, args: List[bytes]):
@@ -334,10 +514,7 @@ def launch_browser(profile_type: ProfileType, instance: Instance, args: List[byt
     subprocess.run(  # nosec
         get_bubblewrap_cmd_line(profile_type, instance_dir) + list(args),
         check=True,
-        env=with_instance_home(
-            os.path.join(get_instance_base_dir(instance.profile_id), instance.id),
-            os.environ,
-        ),
+        env=os.environ,
     )
 
 
@@ -377,7 +554,10 @@ def find_browser_profile_dir(profile_type: ProfileType, instance_dir: str) -> st
 
 
 def get_bubblewrap_cmd_line(
-    profile_type: ProfileType, instance_dir: str
+    profile_type: ProfileType,
+    instance_dir: str,
+    allow_net=True,
+    extra_bwrap_args: Optional[List[bytes]] = None,
 ) -> List[bytes]:
     """
     get_bubblewrap_cmd_line returns the full command line to use for
@@ -428,7 +608,6 @@ def get_bubblewrap_cmd_line(
 
     for arg in [
         "--unshare-all",
-        "--share-net",
         "--setenv",
         "HOME",
         "/home/user",
@@ -460,10 +639,17 @@ def get_bubblewrap_cmd_line(
         "/dev",
         "--proc",
         "/proc",
-        "--",
     ]:
         cmd_line.append(arg.encode(encoding="utf-8"))
 
+    if allow_net:
+        cmd_line.append(b"--share-net")
+
+    if extra_bwrap_args is not None:
+        for extra_arg in extra_bwrap_args:
+            cmd_line.append(extra_arg)
+
+    cmd_line.append(b"--")
     cmd_line.append(executable)
 
     return cmd_line
@@ -481,17 +667,6 @@ def get_executable(profile_type: ProfileType) -> str:
     raise ValueError(
         f'Unknown profile type "{profile_type.value}". Must be one of {enum_synopsis(ProfileType)}.'  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
     )
-
-
-def with_instance_home(instance_dir, env):
-    """
-    with_instance_home returns a copy of the given environment
-    variables that causes browsers to create their profiles under the
-    given path.
-    """
-    new_env = dict(env)
-    new_env["HOME"] = instance_dir
-    return new_env
 
 
 def instance_in_use(instance: Instance) -> bool:
