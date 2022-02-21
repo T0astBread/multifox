@@ -1,5 +1,5 @@
 """
-multifox helps you launch and manage mutliple instances of Firefox
+multifox helps you launch and manage multiple instances of Firefox
 and the Tor Browser.
 
 This module contains all bundled commands.
