@@ -1,6 +1,3 @@
-#! /usr/bin/env nix-shell
-#! nix-shell -p python3 python39Packages.click python39Packages.pyyaml -i python3
-
 """
 multifox helps you launch and manage mutliple instances of Firefox
 and the Tor Browser.
