@@ -9,8 +9,10 @@ let
     bandit
     black
     mypy
+    pip
     pylint
     pytest
+    virtualenv
   ];
   pythonWithPackages = python3.withPackages pythonPackages;
 in
