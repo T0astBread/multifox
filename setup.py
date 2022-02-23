@@ -10,7 +10,7 @@ setup(
     install_requires=["click", "pyyaml"],
     entry_points={
         "console_scripts": [
-            "multifox = multifox:multifox",
+            "multifox = multifox.cli:cli",
         ],
     },
 )

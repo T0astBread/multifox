@@ -2,7 +2,7 @@
 multifox helps you launch and manage multiple instances of Firefox
 and the Tor Browser.
 
-This module contains all bundled commands.
+This module contains general functions and helpers.
 """
 
 import json
@@ -18,161 +18,8 @@ from typing import List, Optional
 import click
 import yaml
 
-
-class ProfileType(Enum):
-    """ProfileType marks what program a profile is for."""
-
-    FIREFOX = "firefox"
-    TOR_BROWSER = "tor-browser"
-
-
-class ProfileConfiguration:
-    """
-    ProfileConfiguration describes settings and customizations of a
-    browser profile.
-    """
-
-    extensions: Optional[List[str]]
-    type: ProfileType
-    userjs: Optional[str]
-
-
-def profile_configuration_from_yaml(
-    profile_config_yaml,
-) -> ProfileConfiguration:
-    """
-    profile_configuration_from_yaml creates a ProfileConfiguration
-    object from a parsed YAML file.
-    """
-    profile_config = ProfileConfiguration()
-    profile_config.extensions = (
-        profile_config_yaml["extensions"]
-        if "extensions" in profile_config_yaml
-        else None
-    )
-    profile_config.type = ProfileType(profile_config_yaml["type"])
-    profile_config.userjs = (
-        profile_config_yaml["userjs"] if "userjs" in profile_config_yaml else None
-    )
-    return profile_config
-
-
-class ProfileInstantiation(Enum):
-    """
-    ProfileInstantiation describes different ways to handle
-    instantiation of a profile.
-    """
-
-    SINGLE = "single"
-    MULTIPLE = "multiple"
-
-
-class Profile:
-    """Profile describes a multifox profile."""
-
-    configuration: ProfileConfiguration
-    id: str
-    instantiation: ProfileInstantiation
-    name: str
-
-
-def profile_from_yaml(
-    profile_yaml,
-) -> Profile:
-    """
-    profile_from_yaml creates a Profile object from a parsed YAML
-    file.
-    """
-    profile = Profile()
-    profile.configuration = profile_configuration_from_yaml(
-        profile_yaml["configuration"]
-    )
-    profile.id = profile_yaml["id"]
-    profile.instantiation = ProfileInstantiation(profile_yaml["instantiation"])
-    profile.name = profile_yaml["name"]
-    return profile
-
-
-class Configuration:
-    """Configuration holds the global multifox configuration."""
-
-    profiles: List[Profile]
-
-
-def configuration_from_yaml(
-    config_yaml,
-) -> Configuration:
-    """
-    configuration_from_yaml creates a Configuration object from a
-    parsed YAML file.
-    """
-    config = Configuration()
-    config.profiles = [profile_from_yaml(p) for p in config_yaml["profiles"]]
-    return config
-
-
-class Instance:
-    """Instance holds information about a profile instance."""
-
-    creation_time: datetime = datetime.now()
-    id: str = ""
-    installed_extensions: List[str] = list()
-    profile_id: str = ""
-    usage_pid: Optional[int] = None
-
-    def to_yaml(self):
-        """
-        to_yaml returns a dictionary containing this object's data.
-
-        The dictionary is serializable to YAML.
-        """
-        return {
-            "creation_time": self.creation_time,
-            "id": self.id,
-            "installed_extensions": self.installed_extensions,
-            "profile_id": self.profile_id,
-            "usage_pid": self.usage_pid,
-        }
-
-
-def instance_from_yaml(
-    instance_yaml,
-) -> Instance:
-    """
-    instance_from_yaml creates an Instance object from a parsed YAML
-    file.
-    """
-    instance = Instance()
-    instance.creation_time = instance_yaml["creation_time"]
-    instance.id = instance_yaml["id"]
-    instance.installed_extensions = instance_yaml["installed_extensions"]
-    instance.profile_id = instance_yaml["profile_id"]
-    instance.usage_pid = (
-        instance_yaml["usage_pid"] if "usage_pid" in instance_yaml else None
-    )
-    return instance
-
-
-class BrokenProfileException(click.ClickException):
-    """BrokenProfileException marks a broken profile."""
-
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = f"Broken profile: {message}"
-
-    def __str__(self):
-        return self.message
-
-
-class BrokenInstanceException(click.ClickException):
-    """BrokenInstanceException marks a broken profile instance."""
-
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = f"Broken instance: {message}"
-
-    def __str__(self):
-        return self.message
+from . import error, model
+from .cli import cli
 
 
 def enum_synopsis(enum) -> str:
@@ -183,56 +30,16 @@ def enum_synopsis(enum) -> str:
     return "|".join([v.value for v in enum])
 
 
-@click.group(add_help_option=False)
-@click.help_option("--help", "-h", help="Show this message and exit")
-def multifox():
-    """
-    Launch and manage mutliple instances of Firefox and the Tor
-    Browser.
-    """
-    return
-
-
-@multifox.command(add_help_option=False)
-@click.help_option("--help", "-h", help="Show this message and exit")
-@click.option("--profile", "-p", nargs=1, help="Use the given profile")
-@click.argument("args", nargs=-1)
-def launch(profile, args):
-    """Start a browser instance"""
-    profile_name = profile
-    if profile_name is None or profile_name == "":
-        raise click.UsageError(
-            "Selecting a profile dynamically is not implemented yet. `--profile` is required."
-        )
-
-    config = load_config()
-    profile = find_profile_by_name(config.profiles, profile_name)
-    if profile is None:
-        raise click.UsageError(f'Profile "{profile_name}" does not exist')
-
-    instance = find_best_instance_for_start(profile)
-
-    if instance_in_use(instance):
-        raise Exception(f"Instance is currently in use by process {instance.usage_pid}")
-
-    instance.usage_pid = os.getpid()
-    write_instance(instance)
-    try:
-        apply_config_to_instance(profile.configuration, instance)
-        launch_browser(profile.configuration.type, instance, args)
-    finally:
-        instance.usage_pid = None
-        write_instance(instance)
-
-
-def load_config() -> Configuration:
+def load_config() -> model.Configuration:
     """load_config loads the global multifox configuration."""
     config_file = os.path.join(get_config_dir(), "config.yml")
     with open(config_file, "r", encoding="utf-8") as f:
-        return configuration_from_yaml(yaml.safe_load(f))
+        return model.configuration_from_yaml(yaml.safe_load(f))
 
 
-def find_profile_by_name(profiles: List[Profile], name: str) -> Optional[Profile]:
+def find_profile_by_name(
+    profiles: List[model.Profile], name: str
+) -> Optional[model.Profile]:
     """
     find_profile_by_name returns the profile from the given list of
     profiles whose name matches the given name.
@@ -243,7 +50,7 @@ def find_profile_by_name(profiles: List[Profile], name: str) -> Optional[Profile
     return None
 
 
-def find_best_instance_for_start(profile: Profile) -> Instance:
+def find_best_instance_for_start(profile: model.Profile) -> model.Instance:
     """
     find_best_instance_for_start returns the instance to use for the
     given profile when launching a browser.
@@ -263,16 +70,16 @@ def find_best_instance_for_start(profile: Profile) -> Instance:
     instance_base_dir = get_instance_base_dir(profile.id)
     os.makedirs(instance_base_dir, mode=0o755, exist_ok=True)
     instance_dirs = os.listdir(instance_base_dir)
-    if profile.instantiation == ProfileInstantiation.SINGLE:
+    if profile.instantiation == model.ProfileInstantiation.SINGLE:
         n_instances = len(instance_dirs)
         if n_instances == 1:
             return load_instance(os.path.join(instance_base_dir, instance_dirs[0]))
         if n_instances == 0:
             return create_instance(profile)
-        raise BrokenProfileException(
+        raise error.BrokenProfileException(
             f'Profile "{profile.name}" is set to single instantiation mode but number of existing instances is {n_instances}'  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
         )
-    if profile.instantiation == ProfileInstantiation.MULTIPLE:
+    if profile.instantiation == model.ProfileInstantiation.MULTIPLE:
         oldest_free_instance = None
         for instance_dir in instance_dirs:
             instance = load_instance(os.path.join(instance_base_dir, instance_dir))
@@ -286,16 +93,16 @@ def find_best_instance_for_start(profile: Profile) -> Instance:
         if oldest_free_instance is None:
             return create_instance(profile)
         return oldest_free_instance
-    raise BrokenProfileException(
-        f'"instantiation" must be one of {enum_synopsis(ProfileInstantiation)} but is "{profile.instantiation.value}"'  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
+    raise error.BrokenProfileException(
+        f'"instantiation" must be one of {enum_synopsis(model.ProfileInstantiation)} but is "{profile.instantiation.value}"'  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
     )
 
 
-def create_instance(profile: Profile) -> Instance:
+def create_instance(profile: model.Profile) -> model.Instance:
     """
     create_instance initializes a new instance for the given profile.
     """
-    instance = Instance()
+    instance = model.Instance()
     instance.id = uuid.uuid4().__str__()
     instance.profile_id = profile.id
     instance.creation_time = datetime.now()
@@ -315,7 +122,9 @@ def create_instance(profile: Profile) -> Instance:
     return instance
 
 
-def apply_config_to_instance(config: ProfileConfiguration, instance: Instance):
+def apply_config_to_instance(
+    config: model.ProfileConfiguration, instance: model.Instance
+):
     """
     apply_config_to_instance applies the given profile configuration
     to the given instance.
@@ -324,7 +133,7 @@ def apply_config_to_instance(config: ProfileConfiguration, instance: Instance):
     install_extensions(config, instance)
 
 
-def update_userjs(config: ProfileConfiguration, instance: Instance):
+def update_userjs(config: model.ProfileConfiguration, instance: model.Instance):
     """
     update_userjs updates an instance's user.js file from the file
     specified in the profile configuration.
@@ -349,7 +158,7 @@ def update_userjs(config: ProfileConfiguration, instance: Instance):
             f.write('user_pref("extensions.autoDisableScopes", 14);\n')
 
 
-def install_extensions(config: ProfileConfiguration, instance: Instance):
+def install_extensions(config: model.ProfileConfiguration, instance: model.Instance):
     """
     install_extensions installs and removes extensions in the profile
     to match the given configuration.
@@ -501,7 +310,9 @@ def extension_id_from_file_path(extension_file_path: str) -> str:
     return os.path.basename(extension_file_path).rstrip(".xpi")
 
 
-def launch_browser(profile_type: ProfileType, instance: Instance, args: List[bytes]):
+def launch_browser(
+    profile_type: model.ProfileType, instance: model.Instance, args: List[bytes]
+):
     """
     launch_browser launches the browser program for the given profile
     instance.
@@ -515,23 +326,23 @@ def launch_browser(profile_type: ProfileType, instance: Instance, args: List[byt
     )
 
 
-def find_browser_profile_dir(profile_type: ProfileType, instance_dir: str) -> str:
+def find_browser_profile_dir(profile_type: model.ProfileType, instance_dir: str) -> str:
     """
     find_browser_profile_dir returns a path to the actual browser
     profile for the given instance.
 
     profile_type must be set to the instance's profile type.
     """
-    if profile_type == ProfileType.FIREFOX:
+    if profile_type == model.ProfileType.FIREFOX:
         firefox_dir = os.path.join(instance_dir, ".mozilla", "firefox")
         profile_dirs = [p for p in os.listdir(firefox_dir) if p.endswith(".default")]
         if len(profile_dirs) != 1:
-            raise BrokenInstanceException(
+            raise error.BrokenInstanceException(
                 "Firefox profiles in instance directory != 1 but an instance should only ever contain one browser profile"  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
             )
         profile_dir = os.path.join(firefox_dir, profile_dirs[0])
         return profile_dir
-    if profile_type == ProfileType.TOR_BROWSER:
+    if profile_type == model.ProfileType.TOR_BROWSER:
         profile_dir = os.path.join(
             instance_dir,
             ".local",
@@ -543,15 +354,15 @@ def find_browser_profile_dir(profile_type: ProfileType, instance_dir: str) -> st
             "profile.default",
         )
         if not os.path.isdir(profile_dir):
-            raise BrokenInstanceException(
+            raise error.BrokenInstanceException(
                 f'Instance does not contain a profile (no directory at "{profile_dir}")'
             )
         return profile_dir
-    raise ValueError(f'"type" must be one of ({enum_synopsis(ProfileType)})')
+    raise ValueError(f'"type" must be one of ({enum_synopsis(model.ProfileType)})')
 
 
 def get_bubblewrap_cmd_line(
-    profile_type: ProfileType,
+    profile_type: model.ProfileType,
     instance_dir: str,
     allow_net=True,
     extra_bwrap_args: Optional[List[bytes]] = None,
@@ -652,21 +463,21 @@ def get_bubblewrap_cmd_line(
     return cmd_line
 
 
-def get_executable(profile_type: ProfileType) -> str:
+def get_executable(profile_type: model.ProfileType) -> str:
     """
     get_executable returns the browser executable to use for the
     profile.
     """
-    if profile_type == ProfileType.FIREFOX:
+    if profile_type == model.ProfileType.FIREFOX:
         return "firefox"
-    if profile_type == ProfileType.TOR_BROWSER:
+    if profile_type == model.ProfileType.TOR_BROWSER:
         return "tor-browser"
     raise ValueError(
-        f'Unknown profile type "{profile_type.value}". Must be one of {enum_synopsis(ProfileType)}.'  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
+        f'Unknown profile type "{profile_type.value}". Must be one of {enum_synopsis(model.ProfileType)}.'  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
     )
 
 
-def instance_in_use(instance: Instance) -> bool:
+def instance_in_use(instance: model.Instance) -> bool:
     """
     instance_in_use checks if the given instance is currently in use
     by a multifox process.
@@ -676,7 +487,7 @@ def instance_in_use(instance: Instance) -> bool:
     return check_pid(instance.usage_pid)
 
 
-def load_instance(instance_dir: str) -> Instance:
+def load_instance(instance_dir: str) -> model.Instance:
     """
     load_instance loads instance information from the given instance
     directory.
@@ -684,10 +495,10 @@ def load_instance(instance_dir: str) -> Instance:
     instance_info_file = os.path.join(instance_dir, "instance.yml")
     with open(instance_info_file, "r", encoding="utf-8") as f:
         instance_yaml = yaml.safe_load(f)
-        return instance_from_yaml(instance_yaml)
+        return model.instance_from_yaml(instance_yaml)
 
 
-def write_instance(instance: Instance):
+def write_instance(instance: model.Instance):
     """
     write_instance writes the given instance information to disk.
     """
@@ -743,7 +554,3 @@ def check_pid(pid: int) -> bool:
         return False
     else:
         return True
-
-
-if __name__ == "__main__":
-    multifox()
