@@ -20,6 +20,12 @@ buildPythonApplication rec {
     gnome.zenity
   ]);
 
+  # The package doesn't have tests right now and apparently that
+  # causes the build to fail, so deactivate the check phase.
+  #
+  # TODO: When there are tests, enable the check phase again.
+  doCheck = false;
+
   postInstall = ''
     completions_path="$out/share/fish/vendor_completions.d"
     mkdir -p "$completions_path"
