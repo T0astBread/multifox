@@ -3,6 +3,7 @@ let
   pythonPackages = pkgs: with pkgs; [
     # production dependencies
     click
+    pygobject3
     pyyaml
 
     # dev dependencies
@@ -20,7 +21,9 @@ mkShell {
   buildInputs = [
     pythonWithPackages
 
+    gnome.gtk3
     gnome.zenity
+    gobject-introspection
   ];
   packages = pythonPackages python39Packages;
   shellHook = ''

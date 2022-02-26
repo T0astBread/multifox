@@ -7,6 +7,7 @@ import os
 import click
 
 import multifox
+from multifox import gui
 
 
 @click.group(add_help_option=False)
@@ -25,13 +26,14 @@ def cli():
 @click.argument("args", nargs=-1)
 def launch(profile, args):
     """Start a browser instance"""
+    config = multifox.load_config()
+
     profile_name = profile
     if profile_name is None or profile_name == "":
-        raise click.UsageError(
-            "Selecting a profile dynamically is not implemented yet. `--profile` is required."
-        )
+        profile_name = gui.select_profile(config)
+        if profile_name is None:
+            raise click.UsageError("No profile selected")
 
-    config = multifox.load_config()
     profile = multifox.find_profile_by_name(config.profiles, profile_name)
     if profile is None:
         raise click.UsageError(f'Profile "{profile_name}" does not exist')

@@ -7,7 +7,7 @@ setup(
     version="0.0.1",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["click", "pyyaml"],
+    install_requires=["click", "pygobject", "pyyaml"],
     entry_points={
         "console_scripts": [
             "multifox = multifox.cli:cli",

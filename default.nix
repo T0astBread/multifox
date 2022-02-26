@@ -2,7 +2,11 @@
 , pkgs
 , buildPythonApplication
 , click
+, gobject-introspection
+, gtk3
+, pygobject3
 , pyyaml
+, wrapGAppsHook
 }:
 
 buildPythonApplication rec {
@@ -11,9 +15,16 @@ buildPythonApplication rec {
 
   src = ./.; # Nix doesn't like "." or "./" but "./." works. 🙃
 
+  buildInputs = [
+    gobject-introspection
+    gtk3
+    wrapGAppsHook
+  ];
+
   propagatedBuildInputs = [
     # Python packages
     click
+    pygobject3
     pyyaml
   ] ++ (with pkgs; [
     # Other OS packages
