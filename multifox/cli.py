@@ -10,14 +10,16 @@ import multifox
 from multifox import gui
 
 
-@click.group(add_help_option=False)
+@click.group(add_help_option=False, invoke_without_command=True)
 @click.help_option("--help", "-h", help="Show this message and exit")
-def cli():
+@click.pass_context
+def cli(ctx: click.Context):
     """
     Launch and manage mutliple instances of Firefox and the Tor
     Browser.
     """
-    return
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(launch)
 
 
 @cli.command(add_help_option=False)
