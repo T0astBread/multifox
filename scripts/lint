@@ -4,18 +4,18 @@ success=true
 
 echo
 echo "=== black ==="
-black --check . || success=false
+black --check --extend-exclude venv . || success=false
 
 echo
 echo "=== bandit ==="
-bandit -c bandit.yml -r . || success=false
+bandit -c bandit.yml --exclude ./venv/ -r . || success=false
 
 echo
 echo "=== mypy ==="
-mypy . || success=false
+mypy --exclude '(^venv/)|(^setup\.py$)' . || success=false
 
 echo
 echo "=== pylint ==="
-find . -name "*.py" -exec pylint {} \; || success=false
+find . -name venv -prune -o -name "*.py" -exec pylint {} \; || success=false
 
 $success
