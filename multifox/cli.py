@@ -3,11 +3,16 @@ cli contains declarations and implementations of multifox commands.
 """
 
 import os
+import sys
 
 import click
 
 import multifox
 from multifox import gui
+
+# HACK: `argv[0]`` gets mangled by wrappers when packaging for Nix,
+# so set it explicitly here.
+sys.argv[0] = "multifox"
 
 
 @click.group(add_help_option=False, invoke_without_command=True)
