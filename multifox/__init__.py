@@ -335,10 +335,13 @@ def find_browser_profile_dir(profile_type: model.ProfileType, instance_dir: str)
     """
     if profile_type == model.ProfileType.FIREFOX:
         firefox_dir = os.path.join(instance_dir, ".mozilla", "firefox")
+    if profile_type == model.ProfileType.LIBREWOLF:
+        firefox_dir = os.path.join(instance_dir, ".librewolf")
+    if profile_type == model.ProfileType.FIREFOX or profile_type == model.ProfileType.LIBREWOLF:
         profile_dirs = [p for p in os.listdir(firefox_dir) if p.endswith(".default")]
         if len(profile_dirs) != 1:
             raise error.BrokenInstanceException(
-                "Firefox profiles in instance directory != 1 but an instance should only ever contain one browser profile"  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
+                "Browser profiles in instance directory != 1 but an instance should only ever contain one browser profile"  # pylint: disable=line-too-long  # This is a string, what do you expect me to do?
             )
         profile_dir = os.path.join(firefox_dir, profile_dirs[0])
         return profile_dir
@@ -470,6 +473,8 @@ def get_executable(profile_type: model.ProfileType) -> str:
     """
     if profile_type == model.ProfileType.FIREFOX:
         return "firefox"
+    if profile_type == model.ProfileType.LIBREWOLF:
+        return "librewolf"
     if profile_type == model.ProfileType.TOR_BROWSER:
         return "tor-browser"
     raise ValueError(

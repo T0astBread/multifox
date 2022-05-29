@@ -12,6 +12,7 @@ class ProfileType(Enum):
     """ProfileType marks what program a profile is for."""
 
     FIREFOX = "firefox"
+    LIBREWOLF = "librewolf"
     TOR_BROWSER = "tor-browser"
 
 
