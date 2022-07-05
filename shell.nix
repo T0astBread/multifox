@@ -21,12 +21,12 @@ mkShell {
   buildInputs = [
     pythonWithPackages
 
-    gnome.gtk3
+    gtk3
     gnome.zenity
     gobject-introspection
   ];
   packages = pythonPackages python39Packages;
   shellHook = ''
-    export PATH=$PATH:${pkgs.firefox}/bin:${pkgs.torbrowser}/bin
+    export PATH=$PATH:${pkgs.firefox}/bin:${pkgs.tor-browser-bundle-bin}/bin
   '';
 }
