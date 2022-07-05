@@ -408,11 +408,12 @@ def get_bubblewrap_cmd_line(
     # NOTE: We can't bind D-Bus since Firefox "merges" profiles with
     # D-Bus enabled.
 
-    pulseaudio_socket_path = f'{os.environ["XDG_RUNTIME_DIR"]}/pulse'
+    xdg_runtime_dir = os.environ["XDG_RUNTIME_DIR"]
 
-    # While X is not great security-wise, this is not an insecure
-    # usage of a temporary file/directory like Bandit claims.
-    x_socket_path = "/tmp/.X11-unix/"  # nosec
+    pulseaudio_socket_path = f"{xdg_runtime_dir}/pulse"
+
+    wayland_display = os.environ["WAYLAND_DISPLAY"]
+    wayland_socket_path = f"{xdg_runtime_dir}/{wayland_display}"
 
     for arg in [
         "--unshare-all",
@@ -435,11 +436,17 @@ def get_bubblewrap_cmd_line(
         instance_dir,
         "/home/user",
         "--setenv",
-        "DISPLAY",
-        os.environ["DISPLAY"],
+        "XDG_SESSION_TYPE",
+        "wayland",
+        "--setenv",
+        "MOZ_ENABLE_WAYLAND",
+        "1",
+        "--setenv",
+        "WAYLAND_DISPLAY",
+        wayland_display,
         "--bind",
-        x_socket_path,
-        x_socket_path,
+        wayland_socket_path,
+        wayland_socket_path,
         "--bind",
         pulseaudio_socket_path,
         pulseaudio_socket_path,
