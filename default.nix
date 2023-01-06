@@ -1,27 +1,18 @@
-{ lib
-, pkgs
-, buildPythonApplication
-, click
-, gobject-introspection
-, gtk3
-, pygobject3
-, pyyaml
-, wrapGAppsHook
-}:
+{ lib, pkgs }:
 
-buildPythonApplication rec {
+pkgs.python3Packages.buildPythonApplication {
   pname = "multifox";
   version = "0.0.1";
 
   src = ./.; # Nix doesn't like "." or "./" but "./." works. 🙃
 
-  buildInputs = [
+  buildInputs = with pkgs; [
     gobject-introspection
     gtk3
     wrapGAppsHook
   ];
 
-  propagatedBuildInputs = [
+  propagatedBuildInputs = with pkgs.python3Packages; [
     # Python packages
     click
     pygobject3
@@ -30,6 +21,12 @@ buildPythonApplication rec {
     # Other OS packages
     gnome.zenity
   ]);
+
+  # Apparently needed for Python apps that use `gobject-introspection`.
+  # See https://github.com/NixOS/nixpkgs/issues/56943#issuecomment-1131643663
+  nativeBuildInputs = with pkgs; [
+    gobject-introspection
+  ];
 
   # The package doesn't have tests right now and apparently that
   # causes the build to fail, so deactivate the check phase.
